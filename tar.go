@@ -47,6 +47,10 @@ func Tar(dirPath, prefix string) (Agg, error) {
 				return err
 			}
 			pieces = append(pieces, piece)
+			if header.FileSize%512 != 0 {
+				padSize := 512 - header.FileSize%512
+				pieces = append(pieces, BytePiece(make([]byte, padSize)))
+			}
 		}
 		return nil
 	})

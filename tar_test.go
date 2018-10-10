@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 
@@ -68,7 +69,7 @@ func TestTar(t *testing.T) {
 				if err != nil {
 					t.Fatalf("file %d: error %s", i, err)
 				}
-				entry.Name = filepath.Join(prefix, entry.Name)
+				entry.Name = path.Join(prefix, entry.Name)
 				if header.Name != entry.Name {
 					t.Errorf("expected name %s but got %s", entry.Name, header.Name)
 				}

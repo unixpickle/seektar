@@ -18,6 +18,10 @@ const (
 
 // Tar generates a tarball as a Piece.
 //
+// If prefix is specified, then it is used as a directory
+// name for the tarred content. Otherwise, the tarred
+// content is stored relative to the root of the archive.
+//
 // The result is deterministic, provided that the contents
 // of the directory do not change.
 func Tar(dirPath, prefix string) (Agg, error) {
@@ -35,7 +39,7 @@ func Tar(dirPath, prefix string) (Agg, error) {
 			filename = filepath.Join(prefix, filename)
 		}
 		header := &tarHeader{
-			Filename: filename,
+			Filename: filepath.ToSlash(filename),
 			FileMode: uint(info.Mode() & os.ModePerm),
 			ModTime:  uint64(info.ModTime().Unix()),
 		}

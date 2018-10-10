@@ -1,6 +1,7 @@
 package seektar
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/unixpickle/essentials"
@@ -20,6 +21,7 @@ func (a Agg) Size() int64 {
 func (a Agg) HashID() []byte {
 	var id []byte
 	for _, p := range a {
+		id = append(id, []byte(fmt.Sprintf("%d", p.Size()))...)
 		id = append(id, p.HashID()...)
 	}
 	return id
@@ -51,13 +53,18 @@ func (a *aggReader) Read(b []byte) (int, error) {
 	if a.reader == nil {
 		if err := a.openReader(); err != nil {
 			if err != io.EOF {
-				err = essentials.AddCtx("Agg read", err)
+				err = essentials.AddCtx("read from Agg", err)
 			}
 			return 0, err
 		}
 	}
 	amount, err := a.reader.Read(b)
 	a.offset += int64(amount)
+	if err == io.EOF {
+		err = nil
+	} else if err != nil {
+		err = essentials.AddCtx("read from Agg", err)
+	}
 	return amount, err
 }
 
@@ -73,7 +80,7 @@ func (a *aggReader) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (a *aggReader) checkReader() {
-	if a.reader == nil {
+	if a.reader != nil {
 		if a.offset < a.readerOffset || a.offset >= a.readerOffset+a.readerSize {
 			a.reader.Close()
 			a.reader = nil
@@ -89,7 +96,7 @@ func (a *aggReader) openReader() error {
 	var offset int64
 	for _, p := range a.agg {
 		size := p.Size()
-		if a.offset >= offset || a.offset < offset+size {
+		if a.offset >= offset && a.offset < offset+size {
 			var err error
 			a.reader, err = p.Open()
 			if err == nil && a.offset > offset {

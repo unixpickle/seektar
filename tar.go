@@ -12,8 +12,8 @@ import (
 type TarTypeFlag byte
 
 const (
-	NormalFile TarTypeFlag = 0
-	Directory  TarTypeFlag = 5
+	NormalFile TarTypeFlag = '0'
+	Directory  TarTypeFlag = '5'
 )
 
 // Tar generates a tarball as a Piece.

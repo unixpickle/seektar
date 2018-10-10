@@ -12,9 +12,7 @@ import (
 
 func TestAgg(t *testing.T) {
 	dir, err := ioutil.TempDir("", "agg_test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	essentials.Must(err)
 	defer os.RemoveAll(dir)
 
 	essentials.Must(ioutil.WriteFile(filepath.Join(dir, "file1"), []byte("testing"), 0600))

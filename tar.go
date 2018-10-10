@@ -24,12 +24,18 @@ func Tar(dirPath, prefix string) (Agg, error) {
 	var pieces []Piece
 
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		relName, err := filepath.Rel(dirPath, path)
+		filename, err := filepath.Rel(dirPath, path)
 		if err != nil {
 			return err
 		}
+		if filename == "." && prefix == "" {
+			return nil
+		}
+		if prefix != "" {
+			filename = filepath.Join(prefix, filename)
+		}
 		header := &tarHeader{
-			Filename: filepath.Join(prefix, relName),
+			Filename: filename,
 			FileMode: uint(info.Mode() & os.ModePerm),
 			ModTime:  uint64(info.ModTime().Unix()),
 		}
@@ -77,14 +83,8 @@ type tarHeader struct {
 
 func (t *tarHeader) Encode() []byte {
 	var res bytes.Buffer
-	filenameEnd := []byte(t.Filename)
-	filenameStart := []byte{}
-	if len(filenameEnd) > 100 {
-		suffixSize := essentials.MaxInt(0, len(filenameEnd)-155)
-		filenameStart = filenameEnd[:suffixSize]
-		filenameEnd = filenameEnd[suffixSize:]
-	}
-	padNull(&res, filenameStart, 100)
+	filenamePrefix, filenameSuffix := splitFilename(t.Filename)
+	padNull(&res, filenameSuffix, 100)
 	res.WriteString(fmt.Sprintf("%06o \x00", t.FileMode))
 	res.WriteString(fmt.Sprintf("%06o \x00", t.OwnerID))
 	res.WriteString(fmt.Sprintf("%06o \x00", t.GroupID))
@@ -98,7 +98,7 @@ func (t *tarHeader) Encode() []byte {
 	padNull(&res, []byte(t.GroupName), 32)
 	res.WriteString(fmt.Sprintf("%06o \x00", t.DeviceMajor))
 	res.WriteString(fmt.Sprintf("%06o \x00", t.DeviceMinor))
-	padNull(&res, filenameStart, 155)
+	padNull(&res, filenamePrefix, 155)
 	for res.Len() < 512 {
 		res.WriteByte(0)
 	}
@@ -123,4 +123,21 @@ func padNull(out *bytes.Buffer, data []byte, length int) {
 			out.WriteByte(0)
 		}
 	}
+}
+
+func splitFilename(filename string) (prefix, suffix []byte) {
+	suffix = []byte(filename)
+	if len(suffix) > 100 {
+		origData := suffix
+		for i, ch := range suffix {
+			if i > 155 {
+				break
+			}
+			if ch == filepath.Separator {
+				prefix = origData[:i]
+				suffix = origData[i+1:]
+			}
+		}
+	}
+	return
 }

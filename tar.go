@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
+	"syscall"
 
 	"github.com/unixpickle/essentials"
 )
@@ -38,18 +41,20 @@ func Tar(dirPath, prefix string) (Agg, error) {
 		if prefix != "" {
 			filename = filepath.Join(prefix, filename)
 		}
+
 		header := &tarHeader{
 			Filename: filepath.ToSlash(filename),
 			FileMode: uint(info.Mode() & os.ModePerm),
 			ModTime:  uint64(info.ModTime().Unix()),
 		}
+		header.FillOwnerInfo(info)
 		if info.IsDir() {
 			header.Type = Directory
 		} else {
 			header.FileSize = uint64(info.Size())
 			header.Type = NormalFile
 		}
-		// TODO: get owner information.
+
 		pieces = append(pieces, BytePiece(header.Encode()))
 		if !info.IsDir() {
 			piece, err := NewFilePiece(path)
@@ -83,6 +88,19 @@ type tarHeader struct {
 	GroupName   string
 	DeviceMajor uint
 	DeviceMinor uint
+}
+
+func (t *tarHeader) FillOwnerInfo(info os.FileInfo) {
+	if sysStat, ok := info.Sys().(*syscall.Stat_t); ok {
+		t.OwnerID = uint(sysStat.Uid)
+		t.GroupID = uint(sysStat.Gid)
+		if userObj, err := user.LookupId(strconv.Itoa(int(sysStat.Uid))); err == nil {
+			t.OwnerName = userObj.Username
+		}
+		if groupObj, err := user.LookupGroupId(strconv.Itoa(int(sysStat.Gid))); err == nil {
+			t.GroupName = groupObj.Name
+		}
+	}
 }
 
 func (t *tarHeader) Encode() []byte {

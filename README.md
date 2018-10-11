@@ -12,8 +12,8 @@ package main
 import "github.com/unixpickle/seektar"
 
 func main() {
-	tarResult, _ := seektar.Tar("/path/to/directory", "directory")
-	tarFile, _ := tarResult.Open()
+    tarResult, _ := seektar.Tar("/path/to/directory", "directory")
+    tarFile, _ := tarResult.Open()
     defer tarFile.Close()
     // tarFile is an io.Reader, io.Seeker, and io.Closer.
     // It dynamically generates tar data.

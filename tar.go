@@ -41,38 +41,51 @@ func Tar(dirPath, prefix string) (Agg, error) {
 		if prefix != "" {
 			filename = filepath.Join(prefix, filename)
 		}
-
-		header := &tarHeader{
-			Filename: filepath.ToSlash(filename),
-			FileMode: uint(info.Mode() & os.ModePerm),
-			ModTime:  uint64(info.ModTime().Unix()),
+		filePieces, err := TarFile(info, path, filepath.ToSlash(filename))
+		if err != nil {
+			return err
 		}
-		header.FillOwnerInfo(info)
-		if info.IsDir() {
-			header.Type = Directory
-		} else {
-			header.FileSize = uint64(info.Size())
-			header.Type = NormalFile
-		}
-
-		pieces = append(pieces, BytePiece(header.Encode()))
-		if !info.IsDir() {
-			piece, err := NewFilePiece(path)
-			if err != nil {
-				return err
-			}
-			pieces = append(pieces, piece)
-			if header.FileSize%512 != 0 {
-				padSize := 512 - header.FileSize%512
-				pieces = append(pieces, BytePiece(make([]byte, padSize)))
-			}
-		}
+		pieces = append(pieces, filePieces...)
 		return nil
 	})
 	if err != nil {
 		return nil, essentials.AddCtx("tar directory", err)
 	}
 	return Agg(pieces), nil
+}
+
+// TarFile generates a tarball containing a single file.
+//
+// The name argument specifies the name to give the file
+// within the archive. It should use the '/' path
+// separator.
+func TarFile(info os.FileInfo, path, name string) (Agg, error) {
+	header := &tarHeader{
+		Filename: name,
+		FileMode: uint(info.Mode() & os.ModePerm),
+		ModTime:  uint64(info.ModTime().Unix()),
+	}
+	header.FillOwnerInfo(info)
+	if info.IsDir() {
+		header.Type = Directory
+	} else {
+		header.FileSize = uint64(info.Size())
+		header.Type = NormalFile
+	}
+
+	pieces := Agg{BytePiece(header.Encode())}
+	if !info.IsDir() {
+		piece, err := NewFilePiece(path)
+		if err != nil {
+			return nil, essentials.AddCtx("TarFile", err)
+		}
+		pieces = append(pieces, piece)
+		if header.FileSize%512 != 0 {
+			padSize := 512 - header.FileSize%512
+			pieces = append(pieces, BytePiece(make([]byte, padSize)))
+		}
+	}
+	return pieces, nil
 }
 
 type tarHeader struct {

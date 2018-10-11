@@ -1,4 +1,4 @@
-# seektar
+# seektar [![GoDoc](https://godoc.org/github.com/unixpickle/seektar?status.svg)](https://godoc.org/github.com/unixpickle/seektar)
 
 Dynamically generated tarballs that support seeking. This can be used from a server to generate downloads for entire directories, while supporting Byte-Range requests.
 

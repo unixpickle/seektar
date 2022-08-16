@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,6 +14,19 @@ import (
 )
 
 func TestTar(t *testing.T) {
+	testTar(t, false, false)
+}
+
+func TestTarHTTP(t *testing.T) {
+	t.Run("UseRoot", func(t *testing.T) {
+		testTar(t, true, true)
+	})
+	t.Run("NoRoot", func(t *testing.T) {
+		testTar(t, true, false)
+	})
+}
+
+func testTar(t *testing.T, useHTTP, httpUseRoot bool) {
 	dir, err := ioutil.TempDir("", "agg_test")
 	essentials.Must(err)
 	defer os.RemoveAll(dir)
@@ -33,7 +47,17 @@ func TestTar(t *testing.T) {
 
 	for _, prefix := range []string{"", "Dir"} {
 		t.Run("Prefix"+prefix, func(t *testing.T) {
-			tarObj, err := Tar(dir, prefix)
+			var tarObj Agg
+			var err error
+			if useHTTP {
+				if httpUseRoot {
+					tarObj, err = TarHTTP(http.Dir("/"), filepath.ToSlash(dir), prefix)
+				} else {
+					tarObj, err = TarHTTP(http.Dir(dir), "/", prefix)
+				}
+			} else {
+				tarObj, err = Tar(dir, prefix)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

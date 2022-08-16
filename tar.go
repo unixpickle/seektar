@@ -3,10 +3,15 @@ package seektar
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
+	"net/http"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/unixpickle/essentials"
@@ -54,6 +59,75 @@ func Tar(dirPath, prefix string) (Agg, error) {
 	return Agg(pieces), nil
 }
 
+// TarHTTP is like Tar, but for an http.FileSystem.
+func TarHTTP(vfs http.FileSystem, dirPath, prefix string) (agg Agg, err error) {
+	defer essentials.AddCtxTo("tar HTTP directory", &err)
+	listing := map[string]fs.FileInfo{}
+	if err := recursiveListHTTP(vfs, dirPath, listing); err != nil {
+		return nil, err
+	}
+	sortedNames := make([]string, 0, len(listing))
+	for name := range listing {
+		sortedNames = append(sortedNames, name)
+	}
+	sort.Strings(sortedNames)
+
+	var pieces []Piece
+	for _, p := range sortedNames {
+		info := listing[p]
+		tarPath := p
+		if tarPath == dirPath {
+			if prefix == "" {
+				// Don't encode the root directory.
+				continue
+			}
+			tarPath = prefix
+		} else {
+			// There is no path.Rel(), so this is what we have
+			// to do instead.
+			tarPath = strings.TrimLeft(p[len(dirPath):], "/")
+			if prefix != "" {
+				tarPath = path.Join(prefix, tarPath)
+			}
+		}
+		filePiece, err := TarHTTPFile(vfs, info, p, tarPath)
+		if err != nil {
+			return nil, err
+		}
+		pieces = append(pieces, filePiece)
+	}
+	return Agg(pieces), nil
+}
+
+func recursiveListHTTP(vfs http.FileSystem, root string, result map[string]fs.FileInfo) error {
+	f, err := vfs.Open(root)
+	if err != nil {
+		return err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return err
+	}
+	result[root] = info
+	if !info.IsDir() {
+		f.Close()
+		return nil
+	}
+
+	listing, err := f.Readdir(0)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	for _, item := range listing {
+		if err := recursiveListHTTP(vfs, path.Join(root, item.Name()), result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // TarFile generates a tarball containing a single file.
 //
 // The name argument specifies the name to give the file
@@ -78,6 +152,41 @@ func TarFile(info os.FileInfo, path, name string) (Agg, error) {
 		piece, err := NewFilePiece(path)
 		if err != nil {
 			return nil, essentials.AddCtx("TarFile", err)
+		}
+		pieces = append(pieces, piece)
+		if header.FileSize%512 != 0 {
+			padSize := 512 - header.FileSize%512
+			pieces = append(pieces, BytePiece(make([]byte, padSize)))
+		}
+	}
+	return pieces, nil
+}
+
+// TarHTTPFile generates a tarball containing a single file
+// in an http.FileSystem.
+//
+// The name argument specifies the name to give the file
+// within the archive. It should use the '/' path
+// separator.
+func TarHTTPFile(vfs http.FileSystem, info fs.FileInfo, path, name string) (Agg, error) {
+	header := &tarHeader{
+		Filename: name,
+		FileMode: uint(info.Mode() & os.ModePerm),
+		ModTime:  uint64(info.ModTime().Unix()),
+	}
+	header.FillOwnerInfo(info)
+	if info.IsDir() {
+		header.Type = Directory
+	} else {
+		header.FileSize = uint64(info.Size())
+		header.Type = NormalFile
+	}
+
+	pieces := Agg{BytePiece(header.Encode())}
+	if !info.IsDir() {
+		piece, err := NewHTTPFilePiece(path, vfs)
+		if err != nil {
+			return nil, essentials.AddCtx("TarHTTPFile", err)
 		}
 		pieces = append(pieces, piece)
 		if header.FileSize%512 != 0 {

@@ -3,6 +3,7 @@ package seektar
 import (
 	"bytes"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/unixpickle/essentials"
@@ -62,6 +63,46 @@ func (f *FilePiece) Open() (ReadSeekCloser, error) {
 }
 
 func (f *FilePiece) HashID() []byte {
+	return []byte(f.path)
+}
+
+// An HTTPFilePiece is a Piece that is stored in a file in
+// an http.FileSsytem.
+type HTTPFilePiece struct {
+	size int64
+	path string
+	fs   http.FileSystem
+}
+
+// NewHTTPFilePiece creates an HTTPFilePiece for a file on
+// an http.FileSystem.
+func NewHTTPFilePiece(path string, fs http.FileSystem) (*HTTPFilePiece, error) {
+	f, err := fs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	f.Close()
+	if err != nil {
+		return nil, essentials.AddCtx("create http file piece", err)
+	} else {
+		return &HTTPFilePiece{
+			size: info.Size(),
+			path: path,
+			fs:   fs,
+		}, nil
+	}
+}
+
+func (f *HTTPFilePiece) Size() int64 {
+	return f.size
+}
+
+func (f *HTTPFilePiece) Open() (ReadSeekCloser, error) {
+	return f.fs.Open(f.path)
+}
+
+func (f *HTTPFilePiece) HashID() []byte {
 	return []byte(f.path)
 }
 

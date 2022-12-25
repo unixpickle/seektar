@@ -2,8 +2,10 @@ package seektar
 
 import (
 	"archive/tar"
+	"bytes"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"path"
@@ -68,6 +70,11 @@ func testTar(t *testing.T, useHTTP, httpUseRoot bool) {
 			}
 			defer tarFile.Close()
 
+			testRandomSeekConsistency(t, tarFile)
+			if _, err := tarFile.Seek(0, io.SeekStart); err != nil {
+				t.Fatal(err)
+			}
+
 			tarReader := tar.NewReader(tarFile)
 
 			entries := []struct {
@@ -109,5 +116,36 @@ func testTar(t *testing.T, useHTTP, httpUseRoot bool) {
 				t.Error("expected EOF")
 			}
 		})
+	}
+}
+
+func testRandomSeekConsistency(t *testing.T, r io.ReadSeeker) {
+	size, err := r.Seek(0, io.SeekEnd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.Seek(0, io.SeekStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, size)
+	_, err = io.ReadFull(r, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 1000; i++ {
+		start := rand.Intn(int(size))
+		length := rand.Intn(1 + int(size) - start)
+		_, err = r.Seek(int64(start), io.SeekStart)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chunk := make([]byte, length)
+		if _, err := io.ReadFull(r, chunk); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(chunk, data[start:start+length]) {
+			t.Fatalf("expected chunk %v but got %v", chunk, data[start:start+length])
+		}
 	}
 }

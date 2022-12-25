@@ -49,7 +49,6 @@ func (a *aggReader) Close() error {
 }
 
 func (a *aggReader) Read(b []byte) (int, error) {
-	a.checkReader()
 	if a.reader == nil {
 		if err := a.openReader(); err != nil {
 			if err != io.EOF {
@@ -60,6 +59,12 @@ func (a *aggReader) Read(b []byte) (int, error) {
 	}
 	amount, err := a.reader.Read(b)
 	a.offset += int64(amount)
+
+	if a.offset >= a.readerOffset+a.readerSize {
+		a.reader.Close()
+		a.reader = nil
+	}
+
 	if err == io.EOF {
 		err = nil
 	} else if err != nil {
@@ -75,23 +80,25 @@ func (a *aggReader) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		offset += a.agg.Size()
 	}
-	a.offset = offset
-	return a.offset, nil
-}
-
-func (a *aggReader) checkReader() {
-	if a.reader != nil {
-		if a.offset < a.readerOffset || a.offset >= a.readerOffset+a.readerSize {
-			a.reader.Close()
-			a.reader = nil
+	if offset != a.offset {
+		a.offset = offset
+		if a.reader != nil {
+			if a.offset < a.readerOffset || a.offset >= a.readerOffset+a.readerSize {
+				a.reader.Close()
+				a.reader = nil
+			} else {
+				if _, err := a.reader.Seek(a.offset-a.readerOffset, io.SeekStart); err != nil {
+					return 0, essentials.AddCtx("seek from Agg", err)
+				}
+			}
 		}
 	}
+	return a.offset, nil
 }
 
 func (a *aggReader) openReader() error {
 	if a.reader != nil {
-		a.reader.Close()
-		a.reader = nil
+		panic("reader should not already be open")
 	}
 	var offset int64
 	for _, p := range a.agg {
